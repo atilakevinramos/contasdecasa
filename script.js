@@ -1,4 +1,4 @@
-// Estado Atual da Aplicação
+// Estado Atual da Aplicação (Inicia sempre no mês e ano atual)
 const currentDate = new Date();
 let currentYear = currentDate.getFullYear();
 let currentMonth = currentDate.getMonth();
@@ -8,6 +8,7 @@ let activeEdit = null;
 
 // Dados Salvos no LocalStorage
 let financeData = JSON.parse(localStorage.getItem('financeData')) || {};
+let recurringItems = JSON.parse(localStorage.getItem('recurringItems')) || { incomes: [], expenses: [] };
 
 // Referências dos Elementos DOM
 const prevMonthBtn = document.getElementById('prev-month-btn');
@@ -17,12 +18,14 @@ const currentMonthDisplay = document.getElementById('current-month-display');
 const incomeForm = document.getElementById('income-form');
 const incomeTitleInput = document.getElementById('income-title');
 const incomeAmountInput = document.getElementById('income-amount');
+const incomeRecurringCheckbox = document.getElementById('income-recurring');
 const incomeList = document.getElementById('income-list');
 
 const expenseForm = document.getElementById('expense-form');
 const expenseTitleInput = document.getElementById('expense-title');
 const expenseAmountInput = document.getElementById('expense-amount');
 const expenseTypeSelect = document.getElementById('expense-type-select');
+const expenseRecurringCheckbox = document.getElementById('expense-recurring');
 const expenseSymbolPrefix = document.getElementById('expense-symbol-prefix');
 const expenseList = document.getElementById('expense-list');
 
@@ -41,6 +44,7 @@ const editTitleInput = document.getElementById('edit-title');
 const editAmountInput = document.getElementById('edit-amount');
 const editTypeGroup = document.getElementById('edit-type-group');
 const editTypeSelect = document.getElementById('edit-type-select');
+const editRecurringCheckbox = document.getElementById('edit-recurring');
 const editAmountLabel = document.getElementById('edit-amount-label');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const modalCancelBtn = document.getElementById('modal-cancel-btn');
@@ -83,13 +87,53 @@ function getPreviousMonthKey(year, month) {
   return getMonthKey(prevY, prevM);
 }
 
-// Inicializa dados do mês e sincroniza despesas pendentes do mês anterior
+// Sincroniza itens recorrentes cadastrados para o mês visualizado
+function syncRecurringItems(year, month) {
+  const key = getMonthKey(year, month);
+  
+  // 1. Sincronizar Entradas Recorrentes
+  recurringItems.incomes.forEach(rec => {
+    const exists = financeData[key].incomes.some(i => i.recurringId === rec.id || i.id === rec.id);
+    if (!exists) {
+      financeData[key].incomes.push({
+        id: Date.now() + Math.random(),
+        recurringId: rec.id,
+        title: rec.title,
+        amount: rec.amount,
+        isRecurring: true
+      });
+    }
+  });
+
+  // 2. Sincronizar Despesas Recorrentes
+  recurringItems.expenses.forEach(rec => {
+    const exists = financeData[key].expenses.some(e => e.recurringId === rec.id || e.id === rec.id);
+    if (!exists) {
+      financeData[key].expenses.push({
+        id: Date.now() + Math.random(),
+        recurringId: rec.id,
+        title: rec.title,
+        amount: rec.amount,
+        isPercent: rec.isPercent || false,
+        selected: true,
+        isRecurring: true,
+        fromPreviousMonth: false
+      });
+    }
+  });
+}
+
+// Inicializa dados do mês e sincroniza despesas pendentes do mês anterior + itens recorrentes
 function initMonthData(year, month) {
   const key = getMonthKey(year, month);
   if (!financeData[key]) {
     financeData[key] = { incomes: [], expenses: [] };
   }
 
+  // Sincronizar recorrentes
+  syncRecurringItems(year, month);
+
+  // Carregar despesas pendentes do mês anterior
   const prevKey = getPreviousMonthKey(year, month);
   if (financeData[prevKey] && Array.isArray(financeData[prevKey].expenses)) {
     const pendingExpenses = financeData[prevKey].expenses.filter(e => !e.selected);
@@ -104,6 +148,7 @@ function initMonthData(year, month) {
           amount: pending.amount,
           isPercent: pending.isPercent || false,
           selected: false,
+          isRecurring: pending.isRecurring || false,
           fromPreviousMonth: true
         });
       }
@@ -113,6 +158,7 @@ function initMonthData(year, month) {
 
 function saveData() {
   localStorage.setItem('financeData', JSON.stringify(financeData));
+  localStorage.setItem('recurringItems', JSON.stringify(recurringItems));
 }
 
 function formatCurrency(value) {
@@ -144,9 +190,17 @@ incomeForm.addEventListener('submit', (e) => {
   const key = getMonthKey(currentYear, currentMonth);
   const title = incomeTitleInput.value.trim();
   const amount = parseFloat(incomeAmountInput.value);
+  const isRecurring = incomeRecurringCheckbox.checked;
 
   if (title && amount > 0) {
-    financeData[key].incomes.push({ id: Date.now(), title, amount });
+    const id = Date.now();
+    const newIncome = { id, title, amount, isRecurring };
+
+    if (isRecurring) {
+      recurringItems.incomes.push({ id, title, amount });
+    }
+
+    financeData[key].incomes.push(newIncome);
     saveData();
     updateUI();
     incomeForm.reset();
@@ -160,16 +214,25 @@ expenseForm.addEventListener('submit', (e) => {
   const title = expenseTitleInput.value.trim();
   const rawAmount = parseFloat(expenseAmountInput.value);
   const isPercent = expenseTypeSelect.value === 'percent';
+  const isRecurring = expenseRecurringCheckbox.checked;
 
   if (title && rawAmount > 0) {
+    const id = Date.now();
+    
+    if (isRecurring) {
+      recurringItems.expenses.push({ id, title, amount: rawAmount, isPercent });
+    }
+
     financeData[key].expenses.push({
-      id: Date.now(),
+      id,
       title,
       amount: rawAmount,
       isPercent: isPercent,
       selected: true,
+      isRecurring: isRecurring,
       fromPreviousMonth: false
     });
+
     saveData();
     updateUI();
     expenseForm.reset();
@@ -201,6 +264,7 @@ function openEditModal(type, id) {
   activeEdit = { type, id };
   editTitleInput.value = item.title;
   editAmountInput.value = item.amount;
+  editRecurringCheckbox.checked = !!item.isRecurring;
   
   if (type === 'income') {
     editTypeGroup.style.display = 'none';
@@ -239,16 +303,38 @@ editForm.addEventListener('submit', (e) => {
   const key = getMonthKey(currentYear, currentMonth);
   const title = editTitleInput.value.trim();
   const amount = parseFloat(editAmountInput.value);
+  const isRecurring = editRecurringCheckbox.checked;
 
   if (title && amount > 0) {
-    const list = activeEdit.type === 'income' ? financeData[key].incomes : financeData[key].expenses;
+    const isIncome = activeEdit.type === 'income';
+    const list = isIncome ? financeData[key].incomes : financeData[key].expenses;
     const item = list.find(i => i.id === activeEdit.id);
+    
     if (item) {
       item.title = title;
       item.amount = amount;
-      if (activeEdit.type === 'expense') {
+      item.isRecurring = isRecurring;
+      
+      if (!isIncome) {
         item.isPercent = (editTypeSelect.value === 'percent');
       }
+
+      // Atualizar lista global de itens recorrentes
+      const recId = item.recurringId || item.id;
+      const recList = isIncome ? recurringItems.incomes : recurringItems.expenses;
+      const recIndex = recList.findIndex(r => r.id === recId);
+
+      if (isRecurring) {
+        const updatedRec = { id: recId, title, amount, ...(isIncome ? {} : { isPercent: item.isPercent }) };
+        if (recIndex > -1) {
+          recList[recIndex] = updatedRec;
+        } else {
+          recList.push(updatedRec);
+        }
+      } else if (recIndex > -1) {
+        recList.splice(recIndex, 1);
+      }
+
       saveData();
       updateUI();
     }
@@ -262,6 +348,13 @@ function editExpense(id) { openEditModal('expense', id); }
 // Remoção de Itens
 function deleteIncome(id) {
   const key = getMonthKey(currentYear, currentMonth);
+  const item = financeData[key].incomes.find(i => i.id === id);
+  
+  if (item && item.isRecurring) {
+    const recId = item.recurringId || item.id;
+    recurringItems.incomes = recurringItems.incomes.filter(r => r.id !== recId);
+  }
+
   financeData[key].incomes = financeData[key].incomes.filter(i => i.id !== id);
   saveData();
   updateUI();
@@ -269,6 +362,13 @@ function deleteIncome(id) {
 
 function deleteExpense(id) {
   const key = getMonthKey(currentYear, currentMonth);
+  const item = financeData[key].expenses.find(e => e.id === id);
+
+  if (item && item.isRecurring) {
+    const recId = item.recurringId || item.id;
+    recurringItems.expenses = recurringItems.expenses.filter(r => r.id !== recId);
+  }
+
   financeData[key].expenses = financeData[key].expenses.filter(e => e.id !== id);
   saveData();
   updateUI();
@@ -293,9 +393,16 @@ function updateUI() {
     totalIncome += item.amount;
     const li = document.createElement('li');
     li.className = 'list-item';
+
+    let badgeHtml = '';
+    if (item.isRecurring) {
+      badgeHtml = '<span class="badge badge-recurring">Recorrente</span>';
+    }
+
     li.innerHTML = `
       <div class="item-info">
         <span>${item.title}</span>
+        ${badgeHtml}
       </div>
       <div class="item-actions">
         <span class="item-amount" style="color: var(--success);">+ ${formatCurrency(item.amount)}</span>
@@ -315,7 +422,6 @@ function updateUI() {
   let totalSelectedExpenses = 0;
 
   currentData.expenses.forEach(item => {
-    // Se for percentual, calcula com base no totalIncome
     let calculatedAmount = item.amount;
     if (item.isPercent) {
       calculatedAmount = (totalIncome * item.amount) / 100;
@@ -331,6 +437,9 @@ function updateUI() {
     let badgeHtml = '';
     if (item.isPercent) {
       badgeHtml += `<span class="badge badge-percent">${item.amount}% da Renda</span>`;
+    }
+    if (item.isRecurring) {
+      badgeHtml += '<span class="badge badge-recurring">Recorrente</span>';
     }
     if (item.fromPreviousMonth) {
       badgeHtml += '<span class="badge badge-carried">Mês Anterior</span>';

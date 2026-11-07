@@ -333,7 +333,7 @@ body {
 .form-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
 }
 
@@ -424,6 +424,23 @@ input:focus {
 .btn-expense { background-color: var(--primary); }
 .btn-expense:hover { background-color: var(--primary-hover); }
 
+/* Opção Checkbox de Recorrência nos Formulários */
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 18px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.checkbox-option label {
+  cursor: pointer;
+  user-select: none;
+}
+
 /* Listas de Itens e Badges */
 .item-list {
   list-style: none;
@@ -495,6 +512,7 @@ input:focus {
 .badge-deferred { background-color: var(--warning-bg); color: var(--warning-text); }
 .badge-carried { background-color: var(--danger-bg); color: var(--danger); }
 .badge-percent { background-color: var(--info-bg); color: var(--info-text); }
+.badge-recurring { background-color: var(--primary-light); color: var(--primary); }
 
 .btn-icon {
   background: transparent;
