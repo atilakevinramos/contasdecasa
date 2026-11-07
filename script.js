@@ -87,19 +87,21 @@ function getPreviousMonthKey(year, month) {
   return getMonthKey(prevY, prevM);
 }
 
-// Sincroniza itens recorrentes cadastrados para o mês visualizado (apenas se mês atual >= mês de criação)
+// Sincroniza itens recorrentes cadastrados para o mês visualizado
 function syncRecurringItems(year, month) {
   const key = getMonthKey(year, month);
   
   // 1. Sincronizar Entradas Recorrentes
   recurringItems.incomes.forEach(rec => {
-    // Se o mês visualizado for menor que o mês de criação da recorrência, ignora
     if (rec.startKey && key < rec.startKey) return;
+    
+    // Se o mês foi explicitamente excluído para esta recorrência, não injeta
+    if (rec.excludedMonths && rec.excludedMonths.includes(key)) return;
 
-    const exists = financeData[key].incomes.some(i => i.recurringId === rec.id || i.id === rec.id);
+    const exists = financeData[key].incomes.some(i => i.id === rec.id || i.recurringId === rec.id);
     if (!exists) {
       financeData[key].incomes.push({
-        id: Date.now() + Math.random(),
+        id: rec.id,
         recurringId: rec.id,
         title: rec.title,
         amount: rec.amount,
@@ -110,13 +112,14 @@ function syncRecurringItems(year, month) {
 
   // 2. Sincronizar Despesas Recorrentes
   recurringItems.expenses.forEach(rec => {
-    // Se o mês visualizado for menor que o mês de criação da recorrência, ignora
     if (rec.startKey && key < rec.startKey) return;
 
-    const exists = financeData[key].expenses.some(e => e.recurringId === rec.id || e.id === rec.id);
+    if (rec.excludedMonths && rec.excludedMonths.includes(key)) return;
+
+    const exists = financeData[key].expenses.some(e => e.id === rec.id || e.recurringId === rec.id);
     if (!exists) {
       financeData[key].expenses.push({
-        id: Date.now() + Math.random(),
+        id: rec.id,
         recurringId: rec.id,
         title: rec.title,
         amount: rec.amount,
@@ -145,7 +148,7 @@ function initMonthData(year, month) {
     const pendingExpenses = financeData[prevKey].expenses.filter(e => !e.selected);
 
     pendingExpenses.forEach(pending => {
-      const alreadyCopied = financeData[key].expenses.some(e => e.originalId === pending.id);
+      const alreadyCopied = financeData[key].expenses.some(e => e.originalId === pending.id || e.id === pending.id);
       if (!alreadyCopied) {
         financeData[key].expenses.push({
           id: Date.now() + Math.random(),
@@ -203,7 +206,7 @@ incomeForm.addEventListener('submit', (e) => {
     const newIncome = { id, title, amount, isRecurring };
 
     if (isRecurring) {
-      recurringItems.incomes.push({ id, title, amount, startKey: key });
+      recurringItems.incomes.push({ id, title, amount, startKey: key, excludedMonths: [] });
     }
 
     financeData[key].incomes.push(newIncome);
@@ -226,7 +229,7 @@ expenseForm.addEventListener('submit', (e) => {
     const id = Date.now();
     
     if (isRecurring) {
-      recurringItems.expenses.push({ id, title, amount: rawAmount, isPercent, startKey: key });
+      recurringItems.expenses.push({ id, title, amount: rawAmount, isPercent, startKey: key, excludedMonths: [] });
     }
 
     financeData[key].expenses.push({
@@ -332,11 +335,13 @@ editForm.addEventListener('submit', (e) => {
 
       if (isRecurring) {
         const existingStartKey = recIndex > -1 ? recList[recIndex].startKey : key;
+        const existingExcluded = recIndex > -1 ? (recList[recIndex].excludedMonths || []) : [];
         const updatedRec = { 
           id: recId, 
           title, 
           amount, 
-          startKey: existingStartKey || key, 
+          startKey: existingStartKey || key,
+          excludedMonths: existingExcluded,
           ...(isIncome ? {} : { isPercent: item.isPercent }) 
         };
         if (recIndex > -1) {
@@ -358,9 +363,23 @@ editForm.addEventListener('submit', (e) => {
 function editIncome(id) { openEditModal('income', id); }
 function editExpense(id) { openEditModal('expense', id); }
 
-// Remoção de Itens (Apenas do mês atual, sem excluir a regra global de recorrência)
+// Remoção Segura de Itens
 function deleteIncome(id) {
   const key = getMonthKey(currentYear, currentMonth);
+  const item = financeData[key].incomes.find(i => i.id === id);
+
+  // Se for um item recorrente, registramos a exclusão para este mês específico na regra global
+  if (item && (item.isRecurring || item.recurringId)) {
+    const recId = item.recurringId || item.id;
+    const recItem = recurringItems.incomes.find(r => r.id === recId);
+    if (recItem) {
+      if (!recItem.excludedMonths) recItem.excludedMonths = [];
+      if (!recItem.excludedMonths.includes(key)) {
+        recItem.excludedMonths.push(key);
+      }
+    }
+  }
+
   financeData[key].incomes = financeData[key].incomes.filter(i => i.id !== id);
   saveData();
   updateUI();
@@ -368,6 +387,20 @@ function deleteIncome(id) {
 
 function deleteExpense(id) {
   const key = getMonthKey(currentYear, currentMonth);
+  const item = financeData[key].expenses.find(e => e.id === id);
+
+  // Se for um item recorrente, registramos a exclusão para este mês específico na regra global
+  if (item && (item.isRecurring || item.recurringId)) {
+    const recId = item.recurringId || item.id;
+    const recItem = recurringItems.expenses.find(r => r.id === recId);
+    if (recItem) {
+      if (!recItem.excludedMonths) recItem.excludedMonths = [];
+      if (!recItem.excludedMonths.includes(key)) {
+        recItem.excludedMonths.push(key);
+      }
+    }
+  }
+
   financeData[key].expenses = financeData[key].expenses.filter(e => e.id !== id);
   saveData();
   updateUI();
@@ -460,7 +493,7 @@ function updateUI() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </button>
         <button class="btn-icon btn-icon-delete" onclick="deleteExpense(${item.id})" title="Excluir">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
       </div>
     `;
