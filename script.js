@@ -49,6 +49,14 @@ const editAmountLabel = document.getElementById('edit-amount-label');
 const modalCloseBtn = document.getElementById('modal-close-btn');
 const modalCancelBtn = document.getElementById('modal-cancel-btn');
 
+// Elementos do Modal de Gerenciamento de Recorrentes
+const manageRecurringBtn = document.getElementById('manage-recurring-btn');
+const recurringModal = document.getElementById('recurring-modal');
+const recurringModalCloseBtn = document.getElementById('recurring-modal-close-btn');
+const recurringModalDoneBtn = document.getElementById('recurring-modal-done-btn');
+const recurringIncomeList = document.getElementById('recurring-income-list');
+const recurringExpenseList = document.getElementById('recurring-expense-list');
+
 // Alternador de Símbolo do Formulário (R$ / %)
 expenseTypeSelect.addEventListener('change', () => {
   if (expenseTypeSelect.value === 'percent') {
@@ -94,8 +102,6 @@ function syncRecurringItems(year, month) {
   // 1. Sincronizar Entradas Recorrentes
   recurringItems.incomes.forEach(rec => {
     if (rec.startKey && key < rec.startKey) return;
-    
-    // Se o mês foi explicitamente excluído para esta recorrência, não injeta
     if (rec.excludedMonths && rec.excludedMonths.includes(key)) return;
 
     const exists = financeData[key].incomes.some(i => i.id === rec.id || i.recurringId === rec.id);
@@ -113,7 +119,6 @@ function syncRecurringItems(year, month) {
   // 2. Sincronizar Despesas Recorrentes
   recurringItems.expenses.forEach(rec => {
     if (rec.startKey && key < rec.startKey) return;
-
     if (rec.excludedMonths && rec.excludedMonths.includes(key)) return;
 
     const exists = financeData[key].expenses.some(e => e.id === rec.id || e.recurringId === rec.id);
@@ -363,12 +368,11 @@ editForm.addEventListener('submit', (e) => {
 function editIncome(id) { openEditModal('income', id); }
 function editExpense(id) { openEditModal('expense', id); }
 
-// Remoção Segura de Itens
+// Remoção Segura de Itens do Mês
 function deleteIncome(id) {
   const key = getMonthKey(currentYear, currentMonth);
   const item = financeData[key].incomes.find(i => i.id === id);
 
-  // Se for um item recorrente, registramos a exclusão para este mês específico na regra global
   if (item && (item.isRecurring || item.recurringId)) {
     const recId = item.recurringId || item.id;
     const recItem = recurringItems.incomes.find(r => r.id === recId);
@@ -389,7 +393,6 @@ function deleteExpense(id) {
   const key = getMonthKey(currentYear, currentMonth);
   const item = financeData[key].expenses.find(e => e.id === id);
 
-  // Se for um item recorrente, registramos a exclusão para este mês específico na regra global
   if (item && (item.isRecurring || item.recurringId)) {
     const recId = item.recurringId || item.id;
     const recItem = recurringItems.expenses.find(r => r.id === recId);
@@ -404,6 +407,110 @@ function deleteExpense(id) {
   financeData[key].expenses = financeData[key].expenses.filter(e => e.id !== id);
   saveData();
   updateUI();
+}
+
+// Funções do Modal de Gerenciamento de Recorrentes
+function openRecurringModal() {
+  renderRecurringManagerLists();
+  recurringModal.classList.add('active');
+}
+
+function closeRecurringModal() {
+  recurringModal.classList.remove('active');
+  updateUI();
+}
+
+manageRecurringBtn.addEventListener('click', openRecurringModal);
+recurringModalCloseBtn.addEventListener('click', closeRecurringModal);
+recurringModalDoneBtn.addEventListener('click', closeRecurringModal);
+
+function deleteGlobalRecurringIncome(id) {
+  recurringItems.incomes = recurringItems.incomes.filter(r => r.id !== id);
+  
+  // Preserva o histórico: remove apenas do mês atual (visualizado) para frente, mantendo os meses passados intactos
+  const currentKey = getMonthKey(currentYear, currentMonth);
+  Object.keys(financeData).forEach(k => {
+    if (k >= currentKey) {
+      financeData[k].incomes = financeData[k].incomes.filter(i => i.id !== id && i.recurringId !== id);
+    }
+  });
+
+  saveData();
+  renderRecurringManagerLists();
+}
+
+function deleteGlobalRecurringExpense(id) {
+  recurringItems.expenses = recurringItems.expenses.filter(r => r.id !== id);
+
+  // Preserva o histórico: remove apenas do mês atual (visualizado) para frente, mantendo os meses passados intactos
+  const currentKey = getMonthKey(currentYear, currentMonth);
+  Object.keys(financeData).forEach(k => {
+    if (k >= currentKey) {
+      financeData[k].expenses = financeData[k].expenses.filter(e => e.id !== id && e.recurringId !== id);
+    }
+  });
+
+  saveData();
+  renderRecurringManagerLists();
+}
+
+function renderRecurringManagerLists() {
+  // Lista de Entradas Recorrentes Globais
+  recurringIncomeList.innerHTML = '';
+  if (recurringItems.incomes.length === 0) {
+    recurringIncomeList.innerHTML = '<li class="list-item" style="justify-content: center; color: var(--text-secondary); font-size: 0.85rem;">Nenhuma entrada fixa cadastrada.</li>';
+  } else {
+    recurringItems.incomes.forEach(rec => {
+      const li = document.createElement('li');
+      li.className = 'list-item';
+      li.innerHTML = `
+        <div class="item-info">
+          <span>${rec.title}</span>
+          <span class="badge badge-recurring">Início: ${rec.startKey || 'Antigo'}</span>
+        </div>
+        <div class="item-actions">
+          <span class="item-amount" style="color: var(--success);">+ ${formatCurrency(rec.amount)}</span>
+          <button class="btn-icon btn-icon-delete" onclick="deleteGlobalRecurringIncome(${rec.id})" title="Excluir Definitivamente">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      `;
+      recurringIncomeList.appendChild(li);
+    });
+  }
+
+  // Lista de Despesas Recorrentes Globais
+  recurringExpenseList.innerHTML = '';
+  if (recurringItems.expenses.length === 0) {
+    recurringExpenseList.innerHTML = '<li class="list-item" style="justify-content: center; color: var(--text-secondary); font-size: 0.85rem;">Nenhuma despesa fixa cadastrada.</li>';
+  } else {
+    recurringItems.expenses.forEach(rec => {
+      const li = document.createElement('li');
+      li.className = 'list-item';
+      
+      let badge = '<span class="badge badge-recurring">Fixo</span>';
+      let amountTxt = formatCurrency(rec.amount);
+      if (rec.isPercent) {
+        badge = '<span class="badge badge-percent">Percentual</span>';
+        amountTxt = `${rec.amount}%`;
+      }
+
+      li.innerHTML = `
+        <div class="item-info">
+          <span>${rec.title}</span>
+          ${badge}
+          <span class="badge badge-recurring">Início: ${rec.startKey || 'Antigo'}</span>
+        </div>
+        <div class="item-actions">
+          <span class="item-amount" style="color: var(--danger);">- ${amountTxt}</span>
+          <button class="btn-icon btn-icon-delete" onclick="deleteGlobalRecurringExpense(${rec.id})" title="Excluir Definitivamente">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      `;
+      recurringExpenseList.appendChild(li);
+    });
+  }
 }
 
 // Atualização Geral da Interface

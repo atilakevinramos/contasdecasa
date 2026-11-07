@@ -96,6 +96,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .brand {
@@ -574,6 +582,18 @@ input:focus {
   padding: 20px;
 }
 
+.modal-card.modal-large {
+  max-width: 580px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-card.modal-large .modal-body {
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -588,6 +608,15 @@ input:focus {
   flex-direction: column;
   gap: 14px;
   margin-bottom: 20px;
+}
+
+.recurring-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
 }
 
 .form-group {
@@ -611,6 +640,11 @@ input:focus {
 .btn-secondary {
   background-color: var(--input-bg);
   color: var(--text-primary);
+  border: 1px solid var(--panel-border);
+}
+.btn-secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .btn-primary {
