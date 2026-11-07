@@ -87,12 +87,15 @@ function getPreviousMonthKey(year, month) {
   return getMonthKey(prevY, prevM);
 }
 
-// Sincroniza itens recorrentes cadastrados para o mês visualizado
+// Sincroniza itens recorrentes cadastrados para o mês visualizado (apenas se mês atual >= mês de criação)
 function syncRecurringItems(year, month) {
   const key = getMonthKey(year, month);
   
   // 1. Sincronizar Entradas Recorrentes
   recurringItems.incomes.forEach(rec => {
+    // Se o mês visualizado for menor que o mês de criação da recorrência, ignora
+    if (rec.startKey && key < rec.startKey) return;
+
     const exists = financeData[key].incomes.some(i => i.recurringId === rec.id || i.id === rec.id);
     if (!exists) {
       financeData[key].incomes.push({
@@ -107,6 +110,9 @@ function syncRecurringItems(year, month) {
 
   // 2. Sincronizar Despesas Recorrentes
   recurringItems.expenses.forEach(rec => {
+    // Se o mês visualizado for menor que o mês de criação da recorrência, ignora
+    if (rec.startKey && key < rec.startKey) return;
+
     const exists = financeData[key].expenses.some(e => e.recurringId === rec.id || e.id === rec.id);
     if (!exists) {
       financeData[key].expenses.push({
@@ -197,7 +203,7 @@ incomeForm.addEventListener('submit', (e) => {
     const newIncome = { id, title, amount, isRecurring };
 
     if (isRecurring) {
-      recurringItems.incomes.push({ id, title, amount });
+      recurringItems.incomes.push({ id, title, amount, startKey: key });
     }
 
     financeData[key].incomes.push(newIncome);
@@ -220,7 +226,7 @@ expenseForm.addEventListener('submit', (e) => {
     const id = Date.now();
     
     if (isRecurring) {
-      recurringItems.expenses.push({ id, title, amount: rawAmount, isPercent });
+      recurringItems.expenses.push({ id, title, amount: rawAmount, isPercent, startKey: key });
     }
 
     financeData[key].expenses.push({
@@ -325,7 +331,14 @@ editForm.addEventListener('submit', (e) => {
       const recIndex = recList.findIndex(r => r.id === recId);
 
       if (isRecurring) {
-        const updatedRec = { id: recId, title, amount, ...(isIncome ? {} : { isPercent: item.isPercent }) };
+        const existingStartKey = recIndex > -1 ? recList[recIndex].startKey : key;
+        const updatedRec = { 
+          id: recId, 
+          title, 
+          amount, 
+          startKey: existingStartKey || key, 
+          ...(isIncome ? {} : { isPercent: item.isPercent }) 
+        };
         if (recIndex > -1) {
           recList[recIndex] = updatedRec;
         } else {
@@ -345,16 +358,9 @@ editForm.addEventListener('submit', (e) => {
 function editIncome(id) { openEditModal('income', id); }
 function editExpense(id) { openEditModal('expense', id); }
 
-// Remoção de Itens
+// Remoção de Itens (Apenas do mês atual, sem excluir a regra global de recorrência)
 function deleteIncome(id) {
   const key = getMonthKey(currentYear, currentMonth);
-  const item = financeData[key].incomes.find(i => i.id === id);
-  
-  if (item && item.isRecurring) {
-    const recId = item.recurringId || item.id;
-    recurringItems.incomes = recurringItems.incomes.filter(r => r.id !== recId);
-  }
-
   financeData[key].incomes = financeData[key].incomes.filter(i => i.id !== id);
   saveData();
   updateUI();
@@ -362,13 +368,6 @@ function deleteIncome(id) {
 
 function deleteExpense(id) {
   const key = getMonthKey(currentYear, currentMonth);
-  const item = financeData[key].expenses.find(e => e.id === id);
-
-  if (item && item.isRecurring) {
-    const recId = item.recurringId || item.id;
-    recurringItems.expenses = recurringItems.expenses.filter(r => r.id !== recId);
-  }
-
   financeData[key].expenses = financeData[key].expenses.filter(e => e.id !== id);
   saveData();
   updateUI();
